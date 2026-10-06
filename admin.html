@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Powertech Admin — Power Technology</title>
+<style>
+:root{--pri:#0E7C5A;--pri2:#0B5E45;--ink:#15241E;--muted:#5D6B65;--paper:#F3F6F4;--line:#D9E1DC;--red:#B5322A;--green:#1D7A49;--amber:#B98710;--tint:#E6F4EE}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 "Segoe UI",system-ui,Roboto,Arial,sans-serif;background:var(--paper);color:var(--ink)}
+header{background:var(--pri2);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header b{font-size:20px}header .sp{flex:1}header small{opacity:.8}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:7px;padding:7px 12px}
+button.pri{background:var(--pri);border-color:var(--pri);color:#fff}button.red{color:var(--red);border-color:#EBC0BC}button.sm{padding:4px 9px;font-size:12.5px}
+main{max-width:1200px;margin:0 auto;padding:18px 16px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer}.stat.on{border-color:var(--pri);box-shadow:0 0 0 2px var(--tint)}
+.stat div{color:var(--muted);font-size:12.5px}.stat b{font-size:24px}
+.bar{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}.bar input{flex:1;min-width:200px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.top{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}.top .who{flex:1;min-width:220px}
+.who b{font-size:15px}.who div{color:var(--muted);font-size:12.5px}
+.chip{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:600}
+.chip.active{background:#E3F4EA;color:var(--green)}.chip.trial{background:#FFF4D6;color:var(--amber)}.chip.locked{background:#FDECEA;color:var(--red)}.chip.expired{background:#EEE;color:#555}
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.devs{font-size:12.5px;color:var(--muted);margin-top:6px}
+.center{display:flex;align-items:center;justify-content:center;min-height:70vh}
+.login{background:#fff;border-radius:14px;padding:28px;max-width:380px;width:100%;text-align:center;border:1px solid var(--line)}
+.err{color:var(--red);font-size:13px;margin-top:10px}.empty{text-align:center;color:var(--muted);padding:30px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#15241E;color:#fff;padding:9px 16px;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<header><b>Powertech Admin</b><small>Power Technology · client licenses</small><span class="sp"></span><span id="me"></span></header>
+<main id="main"><div class="center"><div>Loading…</div></div></main>
+<div id="toast"></div>
+<script src="firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js"></script>
+<script>
+const ADMIN='shinkiari45@gmail.com';
+const DEFAULT_LOCK='Aap ki fees baqaya hai. App sirf dekhne ke liye hai — naye bill nahi ban sakte. Power Technology: 0310-5802297';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ms=v=>v&&v.toMillis?v.toMillis():0;
+const dt=v=>{const m=ms(v);return m?new Date(m).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'};
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2500)}
+function waPhone(p){let d=String(p||'').replace(/\D/g,'');if(d.startsWith('0'))d='92'+d.slice(1);else if(d.length===10&&d.startsWith('3'))d='92'+d;return d}
+let fs,auth,clients=[],filter='all',q='';
+if(!window.PT_FIREBASE||/PASTE/.test(PT_FIREBASE.apiKey)){$('#main').innerHTML='<div class="center"><div class="login"><b>firebase-config.js</b> mein apna Firebase config paste karein, phir yeh page kholein.</div></div>'}
+else{firebase.initializeApp(PT_FIREBASE);auth=firebase.auth();fs=firebase.firestore();
+  auth.getRedirectResult().catch(e=>console.warn(e));
+  auth.onAuthStateChanged(u=>{if(!u)return loginView();if((u.email||'').toLowerCase()!==ADMIN){loginView('Yeh Gmail admin nahi hai: '+u.email);auth.signOut();return}
+    $('#me').innerHTML=`${esc(u.email)} <button class="sm" onclick="auth.signOut()">Logout</button>`;listen()})}
+function loginView(err){$('#me').innerHTML='';$('#main').innerHTML=`<div class="center"><div class="login"><h2 style="margin-top:0">Admin login</h2><p style="color:var(--muted)">Sirf ${ADMIN}</p>
+  <button class="pri" style="width:100%;padding:11px" onclick="login()">Google se login</button><div class="err">${esc(err||'')}</div></div></div>`}
+async function login(){const p=new firebase.auth.GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});
+  try{await auth.signInWithPopup(p)}catch(e){if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code))auth.signInWithRedirect(p);else loginView(e.message)}}
+let unsub;
+function listen(){if(unsub)unsub();unsub=fs.collection('clients').onSnapshot(s=>{clients=[];s.forEach(d=>clients.push({id:d.id,...d.data()}));
+  clients.sort((a,b)=>ms(b.createdAt)-ms(a.createdAt));render()},e=>{$('#main').innerHTML=`<div class="empty">Error: ${esc(e.message)}<br>Firestore rules publish ki hain?</div>`})}
+function stat(c){if(c.status==='active')return'active';if(c.status==='locked')return'locked';
+  const end=ms(c.trialStart)+(c.trialDays||3)*864e5;return Date.now()<end?'trial':'expired'}
+function trialLeft(c){const d=(ms(c.trialStart)+(c.trialDays||3)*864e5-Date.now())/864e5;return d>0?Math.ceil(d)+' din baqi':'khatam'}
+function render(){
+  const n={all:clients.length,active:0,trial:0,expired:0,locked:0};clients.forEach(c=>n[stat(c)]++);
+  const L=clients.filter(c=>(filter==='all'||stat(c)===filter)&&(!q||[c.email,c.shop,c.phone,c.name].join(' ').toLowerCase().includes(q)));
+  const lab={all:'Total clients',active:'Active (paid)',trial:'Trial chal raha',expired:'Trial khatam',locked:'Locked'};
+  $('#main').innerHTML=`<div class="stats">${Object.keys(lab).map(k=>`<div class="stat ${filter===k?'on':''}" onclick="filter='${k}';render()"><div>${lab[k]}</div><b>${n[k]}</b></div>`).join('')}</div>
+  <div class="bar"><input id="q" placeholder="Search: Gmail, shop, phone…" value="${esc(q)}" oninput="q=this.value.toLowerCase();render();const i=$('#q');i.focus();i.setSelectionRange(i.value.length,i.value.length)"></div>
+  ${L.length?L.map(card).join(''):'<div class="empty">Koi client nahi.</div>'}`}
+function card(c){const s=stat(c),devs=Object.entries(c.devices||{});
+  const chip={active:'✅ Active — lifetime',trial:'⏳ Trial — '+trialLeft(c),expired:'⌛ Trial khatam',locked:'🔒 Locked'}[s];
+  return`<div class="card"><div class="top"><div class="who"><b>${esc(c.shop||'(shop ka naam nahi)')}</b> <span class="chip ${s}">${chip}</span>
+   <div>${esc(c.email)} ${c.name?'· '+esc(c.name):''} ${c.phone?`· <a href="https://wa.me/${waPhone(c.phone)}" target="_blank">${esc(c.phone)}</a>`:''}</div>
+   <div>Joined: ${dt(c.createdAt)} · Last seen: ${dt(c.lastSeen)} · App ${esc(c.appVer||'')}</div>
+   ${c.status==='active'?`<div>Activated: ${dt(c.activatedAt)}${c.paid?` · Paid: Rs ${esc(c.paid)}`:''}${c.note?` · ${esc(c.note)}`:''}</div>`:''}
+   ${c.status==='locked'?`<div style="color:var(--red)">Lock message: ${esc(c.lockMsg||'')}</div>`:''}
+   <div class="devs">Devices ${devs.length}/${c.maxDevices||2}: ${devs.map(([id,d])=>`${esc(d.name||'Device')} (${dt(d.last)})`).join(' · ')||'—'}</div></div></div>
+  <div class="acts">
+   ${c.status!=='active'?`<button class="pri sm" onclick="activate('${c.id}')">✅ Activate (lifetime)</button>`:''}
+   ${c.status!=='locked'?`<button class="red sm" onclick="lock('${c.id}')">🔒 Lock</button>`:`<button class="pri sm" onclick="unlock('${c.id}')">🔓 Unlock</button>`}
+   ${c.status!=='active'?`<button class="sm" onclick="extend('${c.id}')">+ Trial din</button>`:''}
+   <button class="sm" onclick="resetDev('${c.id}')">Devices reset</button>
+   <button class="sm" onclick="setMax('${c.id}')">Device limit</button>
+   <button class="sm" onclick="edit('${c.id}')">Edit details</button>
+  </div></div>`}
+const ref=id=>fs.collection('clients').doc(id);
+const C=id=>clients.find(c=>c.id===id);
+async function up(id,d,msg){try{await ref(id).update(d);toast(msg||'Saved')}catch(e){alert('Error: '+e.message)}}
+function activate(id){const paid=prompt('Kitni fees li? (Rs) — khali chhor sakte hain',C(id).paid||'');if(paid===null)return;const note=prompt('Note (optional)',C(id).note||'');
+  up(id,{status:'active',activatedAt:firebase.firestore.FieldValue.serverTimestamp(),paid:paid||'',note:note||'',lockMsg:''},'Activated — client ka app khud update ho jayega')}
+function lock(id){const m=prompt('Client ko kya message dikhana hai?',C(id).lockMsg||DEFAULT_LOCK);if(m===null)return;
+  up(id,{status:'locked',prevStatus:C(id).status,lockMsg:m},'Locked — client view-only mode mein')}
+function unlock(id){const c=C(id);const to=c.prevStatus==='active'||c.activatedAt?'active':'trial';up(id,{status:to,lockMsg:''},'Unlocked ('+to+')')}
+function extend(id){const d=prompt('Trial mein kitne din aur barhane hain?','3');if(!d||!(+d>0))return;const c=C(id);
+  const passed=Math.max(0,Math.ceil((Date.now()-ms(c.trialStart))/864e5));const cur=c.trialDays||3;
+  up(id,{trialDays:Math.max(cur,passed)+(+d),status:c.status==='locked'?'locked':'trial'},'Trial barha diya')}
+function resetDev(id){if(!confirm('Is client ke saare devices hata dein? (Naya mobile/PC register ho sakega)'))return;up(id,{devices:{}},'Devices reset')}
+function setMax(id){const m=prompt('Kitne devices allowed?',C(id).maxDevices||2);if(!m||!(+m>0))return;up(id,{maxDevices:Math.floor(+m)},'Device limit updated')}
+function edit(id){const c=C(id);const shop=prompt('Shop name',c.shop||'');if(shop===null)return;const phone=prompt('Phone',c.phone||'');if(phone===null)return;up(id,{shop,phone})}
+</script>
+</body>
+</html>
